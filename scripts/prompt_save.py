@@ -751,7 +751,7 @@ class ExtraNetworksPagePromptSave(ui_extra_networks.ExtraNetworksPage):
             "preview": self.find_preview(path_without_ext),
             "description": data.get("description", ""),
             "search_terms": [name, self.search_terms_from_path(file_path)],
-            "local_preview": f"{path_without_ext}.jpg",
+            "local_preview": existing_preview_path(path_without_ext),
             "prompt": quote_js(data.get("prompt", "")),
             "negative_prompt": quote_js(data.get("negative_prompt", "")),
             "sort_keys": {"default": index, **self.get_sort_keys(file_path)},
@@ -777,8 +777,28 @@ class ExtraNetworksPagePromptSave(ui_extra_networks.ExtraNetworksPage):
 # Saving a new prompt
 # ----------------------------------------------------------------------------------------------
 
+PREVIEW_EXTENSIONS = (".png", ".jpg")
+
+
+def preview_extension():
+    # The preview format follows the WebUI setting "Saving images/grids" -> "Image Format":
+    # png -> ".png", everything else (jpg/jpeg) -> ".jpg" (the quality comes from "JPEG Quality")
+    if str(shared.opts.samples_format).lower() == "png":
+        return ".png"
+    return ".jpg"
+
+
+def existing_preview_path(path_without_ext):
+    # Returns the preview file of a card (.png or .jpg, whichever exists).
+    # If there is none yet, the path in the currently set format is returned.
+    for ext in PREVIEW_EXTENSIONS:
+        if os.path.isfile(path_without_ext + ext):
+            return path_without_ext + ext
+    return path_without_ext + preview_extension()
+
+
 def save_prompt(name, prompt, negative_prompt, description, notes, image, geninfo, folder, overwrite=False):
-    # Saves a prompt as <folder>/<name>.json (+ <name>.jpg as preview).
+    # Saves a prompt as <folder>/<name>.json (+ <name>.png or <name>.jpg as preview).
     # Returns (status html, update for the overwrite question, True if it was saved).
     if not name:
         return "<div style='color:red;'>Please provide a name for the prompt.</div>", hide_element(), False
@@ -828,10 +848,17 @@ def save_prompt(name, prompt, negative_prompt, description, notes, image, geninf
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
-        # <name>.jpg is always replaced by the current preview, with the generation info as EXIF
-        # (the same WebUI function that the save button of the gallery uses)
+        # The preview is always replaced by the current image, with the generation info (EXIF / PNG info).
+        # Format and JPEG quality come from the WebUI settings (the same function the gallery save button uses)
         if image is not None:
-            images.save_image_with_geninfo(image, geninfo or None, os.path.join(target_dir, f"{safe_name}.jpg"))
+            new_ext = preview_extension()
+            # A preview in the other format would be found first and hide the new one: keep it as .bak
+            for ext in PREVIEW_EXTENSIONS:
+                old_preview = os.path.join(target_dir, f"{safe_name}{ext}")
+                if ext != new_ext and os.path.isfile(old_preview):
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    os.replace(old_preview, os.path.join(target_dir, f"{safe_name}_old_{timestamp}{ext}.bak"))
+            images.save_image_with_geninfo(image, geninfo or None, os.path.join(target_dir, f"{safe_name}{new_ext}"))
 
         return f"<div style='color:green;'>Successfully saved prompt as {html.escape(shown_name)}</div>", hide_element(), True
     except Exception as e:
