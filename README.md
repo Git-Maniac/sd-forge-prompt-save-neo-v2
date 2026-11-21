@@ -1,4 +1,4 @@
-# SD Forge Prompt Save V2 Extension for Forge-Neo from Haoming02
+# SD Forge Prompt Save V2 Extension for Forge-Neo
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
