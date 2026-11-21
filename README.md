@@ -4,6 +4,10 @@
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Gradio](https://img.shields.io/badge/Gradio-supported-orange.svg)
 
+This is a fork of (<https://github.com/zeydsama/sd-forge-prompt-save>) with bugfixes and much more interaction. 
+
+Thanks to zeydsama for your great idea!
+
 **SD Forge Prompt Save** is a seamless extension for [sd-webui-forge-neo](https://github.com/Haoming02/sd-webui-forge-classic) (and compatible WebUI forks) that natively integrates a prompt-saving mechanism into the Extra Networks tab. 
 
 Tired of juggling text files or relying on external tools to store your best prompt formulas? This extension lets you save, preview, and apply your prompts with the exact same workflow used for Loras and Checkpoints.
