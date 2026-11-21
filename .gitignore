@@ -1,4 +1,6 @@
 __pycache__/
 *.py[cod]
 *.so
+*.bak
 .DS_Store
+/saved_prompts
