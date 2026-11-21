@@ -30,7 +30,7 @@ Tired of juggling text files or relying on external tools to store your best pro
    ```
 2. Clone this repository (or copy the extension folder if downloading manually):
    ```bash
-   git clone https://github.com/zeydsama/sd-forge-prompt-save.git
+   git clone https://github.com/Git-Maniac/sd-forge-prompt-save-neo-v2.git
    ```
 3. Restart the WebUI completely, or click **Reload UI** from the settings.
 
