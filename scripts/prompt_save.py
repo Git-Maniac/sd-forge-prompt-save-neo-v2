@@ -105,6 +105,8 @@ def open_prompts_folder():
 OVERLAY_CSS = """<style>
 .prompt-save-overlay { display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 0; overflow: auto; padding: 0.5em; font-size: 0.85em; white-space: pre-wrap; color: #fff; background: rgba(0, 0, 0, 0.85); }
 .card:hover > .prompt-save-overlay { display: block; }
+/* Edit dialog: the overlay is positioned inside the preview card (scrolling and clicking work on the overlay itself) */
+.standalone-card-preview { position: relative; }
 /* Open-folder button in the controls bar, same size and look as the one of the LoRA/Checkpoints tabs (30 x 30 px) */
 .prompt-save-open-folder { flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; justify-content: center; width: 30px; min-width: 30px; max-width: 30px; height: 30px; padding: 0; margin: 0 6px 0 0; font-size: 14px; line-height: 1; cursor: pointer; color: var(--button-secondary-text-color, var(--body-text-color)); background: var(--button-secondary-background-fill, var(--background-fill-secondary)); border: 1px solid var(--button-secondary-border-color, var(--border-color-primary)); border-radius: var(--button-small-radius, var(--radius-md, 6px)); box-shadow: var(--button-shadow, none); transition: background 0.15s ease, border-color 0.15s ease; }
 .prompt-save-open-folder:hover { background: var(--button-secondary-background-fill-hover, var(--background-fill-primary)); border-color: var(--button-secondary-border-color-hover, var(--border-color-accent, var(--border-color-primary))); }
@@ -171,6 +173,31 @@ def folder_below(text):
         current_folder = os.path.join(current_folder, part)
 
     return "/".join(parts)
+
+
+def existing_prompt_names():
+    # Names of all prompts (without ".json") in the prompt folder and its subfolders, e.g. "name" or "sub/name".
+    # They are offered in the name dropdown of the "Save New Prompt" dialog.
+    prompts_dir = get_prompts_dir()
+    if prompts_dir is None:
+        return []
+
+    names = []
+    for folder, subfolders, filenames in os.walk(prompts_dir):
+        subfolders.sort()
+        for filename in sorted(filenames):
+            if filename.endswith(".json"):
+                relative = os.path.relpath(os.path.join(folder, filename), prompts_dir)
+                names.append(os.path.splitext(relative)[0].replace(os.sep, "/"))
+
+    # Sort order: first the prompts of the main folder (A-Z), then the ones in subfolders (by folder, then by name)
+    def sort_key(name):
+        if "/" in name:
+            folder, short_name = name.rsplit("/", 1)
+            return (1, folder.lower(), short_name.lower())
+        return (0, "", name.lower())
+
+    return sorted(names, key=sort_key)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -291,16 +318,19 @@ def fill_add_dialog(prompt, negative_prompt, gallery_images, index, generation_i
         except Exception:
             geninfo = ""
 
+    folder = folder_below(search_text)
+
     return (
         show_element(),  # add_box: show the dialog
-        "",  # add_name: always empty
+        # add_name: the existing names can be picked, a new name can be typed; default is no name
+        gr.update(choices=existing_prompt_names(), value=None),
         prompt,
         negative_prompt,
         "",  # add_description: always empty
         build_notes(tab_values),
         image,
         geninfo,
-        folder_below(search_text),  # add_folder: the folder selected with the folder buttons
+        folder,  # add_folder: the folder selected with the folder buttons
         hide_element(),  # add_confirm: hide the overwrite question
         "",  # add_status: no message
     )
@@ -357,6 +387,34 @@ class PromptSaveUserMetadataEditor(UserMetadataEditor):
 
             with gr.Column(scale=1, min_width=0):
                 self.html_preview = gr.HTML()
+
+    def get_card_html(self, name):
+        # The preview image of the edit dialog: like the base class, plus the hover overlay (EXIF data of the image).
+        # A click on the image opens it in the full screen viewer of the WebUI (showModal).
+        result = super().get_card_html(name)
+
+        item = self.page.items.get(name, {})
+        local_preview = item.get("local_preview")
+        if not local_preview or "<img" not in result:
+            return result  # no image: nothing to show
+
+        # showModal needs an event whose target is the image: a click on the overlay (which covers the image
+        # while the mouse is over it) hands the image over as the target
+        click_js = (
+            "var img = this.closest('.standalone-card-preview').querySelector('img'); "
+            "modalZoomSet(gradioApp().getElementById('modalImage'), opts.js_modal_lightbox_initially_zoomed); "
+            "showModal({target: img, stopPropagation: function() {}});"
+        )
+        result = result.replace("<img ", f'<img onclick="{html.escape(click_js)}" style="cursor: pointer;" ', 1)
+
+        # Add the overlay in front of the last </div>, same as for the cards in create_item_html.
+        # It can be scrolled with the mouse wheel; a click on it opens the full screen viewer too.
+        overlay = (
+            f'<div class="prompt-save-overlay" style="cursor: pointer;" onclick="{html.escape(click_js)}">'
+            f'{html.escape(read_exif_info(local_preview))}</div>'
+        )
+        end = result.rfind("</div>")
+        return result[:end] + overlay + result[end:]
 
     def get_metadata_table(self, name):
         # The table with file infos. The base class lists Filename, File size, Hash and Modified.
@@ -543,7 +601,8 @@ class PromptSaveUserMetadataEditor(UserMetadataEditor):
         with gr.Group(visible=False, elem_id=f"{prefix}_add_prompt_modal", elem_classes="edit-user-metadata") as add_box:
             self.add_box = add_box
             gr.HTML("<h2>Save New Prompt</h2>")
-            self.add_name = gr.Textbox(label="Name", placeholder="Name of the prompt")
+            # Dropdown with the existing names; allow_custom_value lets the user type a new name
+            self.add_name = gr.Dropdown(label="Name", choices=[], value=None, allow_custom_value=True,                                        info="Pick an existing name (to overwrite) or type a new one. Use folder/name to save into a folder (created if new)")
             self.add_description = gr.TextArea(label="Description", lines=2)
             self.add_prompt = gr.TextArea(label="Prompt", lines=4)
             self.add_negative_prompt = gr.TextArea(label="Negative Prompt", lines=4)
@@ -803,10 +862,23 @@ def save_prompt(name, prompt, negative_prompt, description, notes, image, geninf
     if not name:
         return "<div style='color:red;'>Please provide a name for the prompt.</div>", hide_element(), False
 
-    # The file name: only letters, digits, spaces, "_" and "-"
-    safe_name = clean_name(name)
-    if safe_name == "":
-        safe_name = "unnamed_prompt"
+    # A name picked from the dropdown can contain a folder ("sub/name"): then that folder is used
+    name = name.replace("\\", "/")
+
+    # Only letters, digits, spaces, "_" and "-" are allowed in every part (folders and name).
+    # Anything else is refused.
+    parts = name.split("/")
+    for index, part in enumerate(parts):
+        part = part.strip()
+        is_last = index == len(parts) - 1
+        if clean_name(part) != part or (is_last and part == ""):
+            return "<div style='color:red;'>invalid prompt name</div>", hide_element(), False
+
+    if "/" in name:
+        folder, name = name.rsplit("/", 1)
+    name = name.strip()  # no spaces before/after the name (spaces around folder names are removed in folder_below)
+
+    safe_name = name
 
     prompts_dir = get_prompts_dir()
     if prompts_dir is None:
